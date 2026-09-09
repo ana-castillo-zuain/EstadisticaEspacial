@@ -1,0 +1,376 @@
+# TP1
+
+```{r}
+library(tidyverse) # libreria para data wrangling
+datos1a <- read_csv("ar_properties.csv") # Acá completen con su propio PATH al archivo
+datos1a # veo la base
+```
+
+You can add options to executable code like this
+
+```{r}
+library(terra)
+library(sf)
+#vignette(package = "sf")
+#vignette("sf1",package = "sf")
+library("leaflet")
+library(tmap)
+library(OpenStreetMap)
+library(ggplot2)
+
+```
+
+```{r}
+deptos.sf <- datos1b %>% st_as_sf(coords = c("lon", "lat"), crs = 4326)
+deptos.sf
+class(deptos.sf)
+class(deptos.sf$geometry) # sf column
+class(deptos.sf$barrio)
+# veamos un simple feature (observacion o registro) y un sólo atributo
+deptos.sf[1,3]
+# plot
+plot(deptos.sf[1,3])
+# metodos de la clase sf
+methods(class = "sf")
+# extraigo solo la columna de geometris
+st_geometry(deptos.sf)
+# Version alternativa usando terra
+#lonlat <- cbind(datos1b$lon, datos1b$lat)
+#df <- data.frame(ID=datos1b$id, datos1b$sup)
+#crdref <- "+proj=longlat +datum=WGS84"
+#deptos <- vect(lonlat, atts=df, crs=crdref) # with terra
+#deptos.sf <- sf::st_as_sf(deptos) # conversion to sf
+#plot(pts)
+# grafico del objeto sf
+plot(deptos.sf)
+# solo el campo l3 (barrio)
+plot(deptos.sf[,"barrio"]) # solo el campo l3
+# con leaflet
+leaflet(deptos.sf) %>% addTiles() %>% addCircleMarkers(radius=0.2)
+# with ggplot
+ggplot() + geom_sf(data = deptos.sf, size = 0.3)
+# con tmap
+tmap_mode('view')
+qtm(deptos.sf, style = "natural")
+```
+
+```{r}
+# cargo el shape de calles de CABA
+calles.comp <- st_read("callejero")
+calles.comp
+# me quedo con algunos features
+calles<-calles.comp[,c("id","tipo_c","nom_mapa","long")]
+plot(calles)
+# selecciono solo las avenidas
+avenidas<-calles[calles$tipo_c=="AVENIDA",]
+plot(avenidas)
+nombres.ave<-avenidas$nom_mapa
+# av rivadavia 
+cuales<-grep("RIVADAVIA",nombres.ave)
+rivadavia<-avenidas[cuales,]
+plot(rivadavia)
+# largo de la ave rivadavia
+sum(rivadavia$long)
+# geometria de la ave rivadavia
+rivadavia.geo<-rivadavia$geometry
+plot(rivadavia.geo)
+# grafico con leaflet de avenidas
+leaflet(avenidas) %>% addTiles() %>% addPolylines()
+# grafico con leaflet de Rivadavia
+leaflet(rivadavia) %>% addTiles() %>% addPolylines()
+```
+
+```{r}
+barrios.comp <- st_read("barrios")
+barrios.comp
+plot(barrios.comp)
+# me quedo solo con feature de barrio
+barrios<-barrios.comp[1]
+barrios
+plot(barrios)
+# la geometria
+barrios$geometry
+class(barrios)
+# subseting de poligonos
+plot(barrios[1:5,])
+print(barrios.comp, n = 3)
+# union de barrios
+union._barrios<-st_union(barrios)
+union._barrios
+plot(union._barrios)
+# grafico con leaflet barrios
+leaflet(barrios) %>% addTiles() %>% addPolygons()
+# grafico con leaflet union de barrios
+leaflet(union._barrios) %>% addTiles() %>% addPolygons()
+
+```
+
+```{r}
+comunas.comp <- st_read("comunas")
+comunas.comp
+plot(comunas.comp)
+comunas<-comunas.comp[1]
+plot(comunas)
+```
+
+```{r}
+leaflet() %>% addTiles() %>% addPolygons(data=barrios,color = "green") %>% addPolygons(data=comunas,color = "red") %>% addCircles(data=deptos.sf,radius=0.01) %>% addPolylines(data=avenidas,color = "black")
+# un poco
+leaflet() %>% addTiles() %>% addPolygons(data=barrios,color = "green") %>% addPolygons(data=comunas,color = "red") %>% addCircles(data=deptos.sf[1:1000,],radius=0.01) %>% addPolylines(data=rivadavia,color = "black")
+
+# barrios with ggplot
+ggplot() + geom_sf(data = deptos.sf, size = 0.3,color="grey") + geom_sf(data = barrios, aes(fill = BARRIO), alpha = 0.5) + geom_sf(data=rivadavia)
+# comunas with ggplot
+ggplot() + geom_sf(data = deptos.sf, size = 0.3,color="grey") + geom_sf(data=comunas.comp, aes(fill = COMUNAS), alpha = 0.5) + geom_sf(data=rivadavia)
+```
+
+```{r}
+require(spatstat)
+require(maptools)
+# cargo provincias y consigo el limite de CABA 
+provincia.comp <- st_read("provincia")
+caba.ch<-st_convex_hull(provincia.comp[1,]$geometry)
+coo<-st_coordinates(caba.ch)[-35,1:2]
+caba.win<-owin(poly=list(x=rev(coo[,1]),y=rev(coo[,2])))
+plot(caba.ch)
+plot(caba.win)
+```
+
+```{r}
+require(raster)
+require(terra)
+visible<-rast("sentinel/2021-10-20-0000_2021-10-20-2359_Sentinel-2_L2A_True_Color.tiff")
+visible # objeto
+class(visible)
+names(visible)<-c("Red","Green","Blue")
+visible.ras<-raster(visible)
+summary(values(visible.ras))
+plot(visible$Red, main = "Red", col = gray(0:100 / 100))
+plot(caba.win,border="yellow",add=T)
+plot(visible$Green, main = "green", col = gray(0:100 / 100))
+plot(caba.win,border="yellow",add=T)
+plot(visible$Blue, main = "blue", col = gray(0:100 / 100))
+plot(caba.win,border="yellow",add=T)
+```
+
+# 2)
+
+```{r}
+library(sf)
+library(leaflet)
+library(dplyr)
+
+barrios <- st_transform(barrios, 4326)
+deptos.sf <- st_transform(deptos.sf, 4326)
+
+pal <- colorFactor(
+  palette = "Set3",
+  domain = deptos.sf$barrio
+)
+
+leaflet() %>%
+  addTiles() %>%
+  
+  addPolygons(
+    data = barrios,
+    fill = FALSE,
+    color = "black",
+    weight = 2,
+    opacity = 0.8
+  ) %>%
+  
+  addCircleMarkers(
+    data = deptos.sf,
+    radius = 4,
+    color = ~pal(barrio),
+    fillColor = ~pal(barrio),
+    fillOpacity = 0.7,
+    stroke = FALSE,
+    popup = ~paste0(
+      "<b>Barrio:</b> ", barrio
+    )
+  
+  )
+```
+
+```{r}
+library(sf)
+library(dplyr)
+
+# Barrios oficiales
+barrios.comp <- st_read("barrios")
+barrios <- barrios.comp
+
+# Asegurar que ambos estén en el mismo CRS
+barrios <- st_transform(barrios, 4326)
+deptos.sf <- st_transform(deptos.sf, 4326)
+
+# Me quedo con nombre del barrio + geometría
+barrios2 <- barrios %>%
+  select(BARRIO) %>%
+  rename(barrio_real = BARRIO)
+
+# Cruce espacial:
+# identifica en qué barrio oficial cae cada departamento
+comparacion <- st_join(
+  deptos.sf,
+  barrios2,
+  join = st_within,
+  left = TRUE
+)
+
+# Normalizo mayúsculas/minúsculas y espacios para evitar falsos errores
+comparacion <- comparacion %>%
+  mutate(
+    barrio_declarado = toupper(trimws(barrio)),
+    barrio_real = toupper(trimws(barrio_real)),
+    correcto = barrio_declarado == barrio_real
+  )
+
+# Resultado por barrio
+resultado <- comparacion %>%
+  st_drop_geometry() %>%
+  group_by(barrio_declarado) %>%
+  summarise(
+    total_puntos = n(),
+    puntos_correctos = sum(correcto, na.rm = TRUE),
+    puntos_incorrectos = total_puntos - puntos_correctos,
+    porcentaje_correcto = round(
+      100 * puntos_correctos / total_puntos,
+      2
+    )
+  ) %>%
+  arrange(desc(porcentaje_correcto))
+
+resultado
+```
+
+```{r}
+library(sf)
+library(dplyr)
+
+# Asegurar mismo CRS
+barrios <- st_transform(barrios, st_crs(deptos.sf))
+
+# Polígono de Constitución
+constitucion <- barrios %>%
+  filter(toupper(BARRIO) == "CONSTITUCION")
+
+# Puntos que caen dentro de Constitución
+puntos_constitucion <- deptos.sf[
+  st_within(deptos.sf, constitucion, sparse = FALSE)[,1],
+]
+
+# Ver a qué barrio están asignados esos puntos
+puntos_constitucion %>%
+  st_drop_geometry() %>%
+  count(barrio, sort = TRUE)
+```
+
+```{r}
+library(sf)
+library(dplyr)
+library(stringi)
+
+# Barrios oficiales
+barrios.comp <- st_read("barrios")
+barrios <- barrios.comp
+
+# Asegurar que ambos estén en el mismo CRS
+barrios <- st_transform(barrios, 4326)
+deptos.sf <- st_transform(deptos.sf, 4326)
+
+# Me quedo con nombre del barrio + geometría
+barrios2 <- barrios %>%
+  select(BARRIO) %>%
+  rename(barrio_real = BARRIO)
+
+comparacion <- st_join(
+  deptos.sf,
+  barrios2,
+  join = st_within,
+  left = TRUE
+)
+
+
+comparacion <- comparacion %>%
+  mutate(
+    barrio_declarado = barrio %>%
+      trimws() %>%
+      toupper() %>%
+      stri_trans_general("Latin-ASCII"),
+
+    barrio_real = barrio_real %>%
+      trimws() %>%
+      toupper() %>%
+      stri_trans_general("Latin-ASCII"),
+
+    correcto = barrio_declarado == barrio_real
+  )
+
+# Resultado por barrio
+resultado <- comparacion %>%
+  st_drop_geometry() %>%
+  group_by(barrio_declarado) %>%
+  summarise(
+    total_puntos = n(),
+    puntos_correctos = sum(correcto, na.rm = TRUE),
+    puntos_incorrectos = total_puntos - puntos_correctos,
+    porcentaje_correcto = round(
+      100 * puntos_correctos / total_puntos,
+      2
+    )
+  ) %>%
+  arrange(desc(porcentaje_correcto))
+
+resultado
+```
+
+```{r}
+library(sf)
+library(dplyr)
+library(leaflet)
+library(stringi)
+
+# Normalizo el nombre del barrio en el shapefile
+barrios_mapa <- barrios %>%
+  mutate(
+    barrio_declarado = BARRIO %>%
+      trimws() %>%
+      toupper() %>%
+      stri_trans_general("Latin-ASCII")
+  ) %>%
+  left_join(resultado, by = "barrio_declarado")
+
+# Paleta según porcentaje correcto
+pal_pct <- colorNumeric(
+  palette = "YlGn",
+  domain = barrios_mapa$porcentaje_correcto,
+  na.color = "grey90"
+)
+
+leaflet(barrios_mapa) %>%
+  
+  addPolygons(
+    fillColor = ~pal_pct(porcentaje_correcto),
+    fillOpacity = 0.8,
+    color = "black",
+    weight = 1.5,
+    
+    popup = ~paste0(
+      "<b>Barrio:</b> ", BARRIO,
+      "<br><b>Total puntos:</b> ", total_puntos,
+      "<br><b>Puntos correctos:</b> ", puntos_correctos,
+      "<br><b>Puntos incorrectos:</b> ", puntos_incorrectos,
+      "<br><b>% correcto:</b> ", porcentaje_correcto, "%"
+    )
+  ) %>%
+  
+  addLegend(
+    position = "bottomright",
+    pal = pal_pct,
+    values = ~porcentaje_correcto,
+    title = "% de puntos<br>correctamente ubicados",
+    opacity = 0.8
+  )
+```
