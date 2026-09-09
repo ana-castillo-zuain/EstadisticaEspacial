@@ -4,6 +4,24 @@
 library(tidyverse) # libreria para data wrangling
 datos1a <- read_csv("ar_properties.csv") # Acá completen con su propio PATH al archivo
 datos1a # veo la base
+
+# Selecciono departamentos en venta publicados en Capital Federal y calculo
+# el precio por metro cuadrado cubierto.
+datos1b <- datos1a %>% 
+                   # Me quedo con los que pertenecen a Argentina y Capital Federal
+            filter(l1 == "Argentina", 
+                   l2 == "Capital Federal", 
+                   # cuyo precio este en dolares 
+                   currency == "USD", 
+                   # propiedad tipo Departamento
+                   property_type %in% c("Departamento"),
+                   # operaciones de venta
+                   operation_type == "Venta",
+                   # acoto por precio y superficie
+                   between(surface_covered,11,500),between(price,1000,2e6)) %>% dplyr::select(id,l3,surface_covered,price,lat,lon,rooms,bathrooms,bedrooms) %>% mutate(pm2=price/surface_covered) %>% rename(precio=price,barrio=l3,sup=surface_covered,ambientes=rooms,baths=bathrooms,cuartos=bedrooms) %>% na.omit()
+# chequeo si el filtro se refleja correctamente en mi nuevo dataset datos1b
+datos1b 
+attach(datos1b) # pongo las variables en memoria
 ```
 
 You can add options to executable code like this
@@ -56,7 +74,7 @@ qtm(deptos.sf, style = "natural")
 
 ```{r}
 # cargo el shape de calles de CABA
-calles.comp <- st_read("callejero")
+calles.comp <- st_read("callejero-20260902/callejero.shp")
 calles.comp
 # me quedo con algunos features
 calles<-calles.comp[,c("id","tipo_c","nom_mapa","long")]
@@ -81,7 +99,7 @@ leaflet(rivadavia) %>% addTiles() %>% addPolylines()
 ```
 
 ```{r}
-barrios.comp <- st_read("barrios")
+barrios.comp <- st_read("barrios-20260902/barrios_badata_wgs84.shp")
 barrios.comp
 plot(barrios.comp)
 # me quedo solo con feature de barrio
@@ -106,7 +124,7 @@ leaflet(union._barrios) %>% addTiles() %>% addPolygons()
 ```
 
 ```{r}
-comunas.comp <- st_read("comunas")
+comunas.comp <- st_read("comunas-20260902/comunas_wgs84.shp")
 comunas.comp
 plot(comunas.comp)
 comunas<-comunas.comp[1]
@@ -124,11 +142,123 @@ ggplot() + geom_sf(data = deptos.sf, size = 0.3,color="grey") + geom_sf(data = b
 ggplot() + geom_sf(data = deptos.sf, size = 0.3,color="grey") + geom_sf(data=comunas.comp, aes(fill = COMUNAS), alpha = 0.5) + geom_sf(data=rivadavia)
 ```
 
+# Mapas coropléticos barriales
+
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(stringi)
+
+# Normalizo los nombres para poder unir los datos publicados con los barrios
+# oficiales, aun cuando difieran en mayúsculas, tildes o espacios.
+normalizar_barrio <- function(x) {
+  x %>%
+    as.character() %>%
+    trimws() %>%
+    toupper() %>%
+    stri_trans_general("Latin-ASCII")
+}
+
+barrios_mapa <- st_read(
+  "barrios-20260902/barrios_badata_wgs84.shp",
+  quiet = TRUE
+) %>%
+  st_transform(4326) %>%
+  mutate(barrio_id = normalizar_barrio(BARRIO))
+
+datos_mapa <- datos1b %>%
+  mutate(barrio_id = normalizar_barrio(barrio))
+
+estadisticas_barriales <- datos_mapa %>%
+  group_by(barrio_id) %>%
+  summarise(
+    mediana_precio_m2 = median(pm2, na.rm = TRUE),
+    departamentos_publicados = n(),
+    mediana_superficie = median(sup, na.rm = TRUE),
+    mediana_ambientes = median(ambientes, na.rm = TRUE),
+    iqr_precio_m2 = IQR(pm2, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+barrios_estadisticas <- barrios_mapa %>%
+  left_join(estadisticas_barriales, by = "barrio_id")
+```
+
+```{r}
+mapa_coropletico <- function(datos, variable, titulo, subtitulo, leyenda) {
+  ggplot(datos) +
+    geom_sf(aes(fill = .data[[variable]]), color = "white", linewidth = 0.25) +
+    scale_fill_viridis_c(
+      option = "C",
+      na.value = "grey90",
+      name = leyenda,
+      guide = guide_colorbar(
+        title.position = "top",
+        barwidth = unit(8, "cm"),
+        barheight = unit(0.4, "cm")
+      )
+    ) +
+    labs(
+      title = titulo,
+      subtitle = subtitulo,
+      caption = "Fuente: ar_properties.csv; elaboración propia"
+    ) +
+    theme_void() +
+    theme(
+      plot.title = element_text(face = "bold", size = 13),
+      plot.subtitle = element_text(size = 10),
+      legend.position = "bottom",
+      plot.caption = element_text(hjust = 0)
+    )
+}
+
+mapa_coropletico(
+  barrios_estadisticas,
+  "mediana_precio_m2",
+  "Mediana del precio por metro cuadrado",
+  "Departamentos en venta, por barrio",
+  "USD/m²"
+)
+
+mapa_coropletico(
+  barrios_estadisticas,
+  "departamentos_publicados",
+  "Cantidad de departamentos publicados",
+  "Departamentos en venta, por barrio",
+  "Publicaciones"
+)
+
+mapa_coropletico(
+  barrios_estadisticas,
+  "mediana_superficie",
+  "Superficie mediana",
+  "Departamentos en venta, por barrio",
+  "m²"
+)
+
+mapa_coropletico(
+  barrios_estadisticas,
+  "mediana_ambientes",
+  "Número mediano de ambientes",
+  "Departamentos en venta, por barrio",
+  "Ambientes"
+)
+
+mapa_coropletico(
+  barrios_estadisticas,
+  "iqr_precio_m2",
+  "Rango intercuartílico del precio por metro cuadrado",
+  "Departamentos en venta, por barrio",
+  "IQR (USD/m²)"
+)
+```
+
 ```{r}
 require(spatstat)
 require(maptools)
 # cargo provincias y consigo el limite de CABA 
-provincia.comp <- st_read("provincia")
+provincia.comp <- st_read("Provincia-20260902/ign_provincia.shp")
 caba.ch<-st_convex_hull(provincia.comp[1,]$geometry)
 coo<-st_coordinates(caba.ch)[-35,1:2]
 caba.win<-owin(poly=list(x=rev(coo[,1]),y=rev(coo[,2])))
@@ -139,7 +269,7 @@ plot(caba.win)
 ```{r}
 require(raster)
 require(terra)
-visible<-rast("sentinel/2021-10-20-0000_2021-10-20-2359_Sentinel-2_L2A_True_Color.tiff")
+visible<-rast("Sentinel-20260902/2021-10-20-0000_2021-10-20-2359_Sentinel-2_L2A_True_Color.tiff")
 visible # objeto
 class(visible)
 names(visible)<-c("Red","Green","Blue")
@@ -198,7 +328,7 @@ library(sf)
 library(dplyr)
 
 # Barrios oficiales
-barrios.comp <- st_read("barrios")
+barrios.comp <- st_read("barrios-20260902/barrios_badata_wgs84.shp")
 barrios <- barrios.comp
 
 # Asegurar que ambos estén en el mismo CRS
@@ -273,7 +403,7 @@ library(dplyr)
 library(stringi)
 
 # Barrios oficiales
-barrios.comp <- st_read("barrios")
+barrios.comp <- st_read("barrios-20260902/barrios_badata_wgs84.shp")
 barrios <- barrios.comp
 
 # Asegurar que ambos estén en el mismo CRS
