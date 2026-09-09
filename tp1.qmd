@@ -142,147 +142,6 @@ ggplot() + geom_sf(data = deptos.sf, size = 0.3,color="grey") + geom_sf(data = b
 ggplot() + geom_sf(data = deptos.sf, size = 0.3,color="grey") + geom_sf(data=comunas.comp, aes(fill = COMUNAS), alpha = 0.5) + geom_sf(data=rivadavia)
 ```
 
-# Mapas coropléticos barriales
-
-```{r}
-library(sf)
-library(dplyr)
-library(ggplot2)
-library(stringi)
-
-# Normalizo los nombres para poder unir los datos publicados con los barrios
-# oficiales, aun cuando difieran en mayúsculas, tildes o espacios.
-normalizar_barrio <- function(x) {
-  x %>%
-    as.character() %>%
-    trimws() %>%
-    toupper() %>%
-    stri_trans_general("Latin-ASCII")
-}
-
-barrios_mapa <- st_read(
-  "barrios-20260902/barrios_badata_wgs84.shp",
-  quiet = TRUE
-) %>%
-  st_transform(4326) %>%
-  mutate(barrio_id = normalizar_barrio(BARRIO))
-
-datos_mapa <- datos1b %>%
-  mutate(barrio_id = normalizar_barrio(barrio))
-
-estadisticas_barriales <- datos_mapa %>%
-  group_by(barrio_id) %>%
-  summarise(
-    mediana_precio_m2 = median(pm2, na.rm = TRUE),
-    departamentos_publicados = n(),
-    mediana_superficie = median(sup, na.rm = TRUE),
-    mediana_ambientes = median(ambientes, na.rm = TRUE),
-    iqr_precio_m2 = IQR(pm2, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-barrios_estadisticas <- barrios_mapa %>%
-  left_join(estadisticas_barriales, by = "barrio_id")
-```
-
-```{r}
-mapa_coropletico <- function(datos, variable, titulo, subtitulo, leyenda) {
-  ggplot(datos) +
-    geom_sf(aes(fill = .data[[variable]]), color = "white", linewidth = 0.25) +
-    scale_fill_viridis_c(
-      option = "C",
-      na.value = "grey90",
-      name = leyenda,
-      guide = guide_colorbar(
-        title.position = "top",
-        barwidth = unit(8, "cm"),
-        barheight = unit(0.4, "cm")
-      )
-    ) +
-    labs(
-      title = titulo,
-      subtitle = subtitulo,
-      caption = "Fuente: ar_properties.csv; elaboración propia"
-    ) +
-    theme_void() +
-    theme(
-      plot.title = element_text(face = "bold", size = 13),
-      plot.subtitle = element_text(size = 10),
-      legend.position = "bottom",
-      plot.caption = element_text(hjust = 0)
-    )
-}
-
-mapa_coropletico(
-  barrios_estadisticas,
-  "mediana_precio_m2",
-  "Mediana del precio por metro cuadrado",
-  "Departamentos en venta, por barrio",
-  "USD/m²"
-)
-
-mapa_coropletico(
-  barrios_estadisticas,
-  "departamentos_publicados",
-  "Cantidad de departamentos publicados",
-  "Departamentos en venta, por barrio",
-  "Publicaciones"
-)
-
-mapa_coropletico(
-  barrios_estadisticas,
-  "mediana_superficie",
-  "Superficie mediana",
-  "Departamentos en venta, por barrio",
-  "m²"
-)
-
-mapa_coropletico(
-  barrios_estadisticas,
-  "mediana_ambientes",
-  "Número mediano de ambientes",
-  "Departamentos en venta, por barrio",
-  "Ambientes"
-)
-
-mapa_coropletico(
-  barrios_estadisticas,
-  "iqr_precio_m2",
-  "Rango intercuartílico del precio por metro cuadrado",
-  "Departamentos en venta, por barrio",
-  "IQR (USD/m²)"
-)
-```
-
-```{r}
-require(spatstat)
-require(maptools)
-# cargo provincias y consigo el limite de CABA 
-provincia.comp <- st_read("Provincia-20260902/ign_provincia.shp")
-caba.ch<-st_convex_hull(provincia.comp[1,]$geometry)
-coo<-st_coordinates(caba.ch)[-35,1:2]
-caba.win<-owin(poly=list(x=rev(coo[,1]),y=rev(coo[,2])))
-plot(caba.ch)
-plot(caba.win)
-```
-
-```{r}
-require(raster)
-require(terra)
-visible<-rast("Sentinel-20260902/2021-10-20-0000_2021-10-20-2359_Sentinel-2_L2A_True_Color.tiff")
-visible # objeto
-class(visible)
-names(visible)<-c("Red","Green","Blue")
-visible.ras<-raster(visible)
-summary(values(visible.ras))
-plot(visible$Red, main = "Red", col = gray(0:100 / 100))
-plot(caba.win,border="yellow",add=T)
-plot(visible$Green, main = "green", col = gray(0:100 / 100))
-plot(caba.win,border="yellow",add=T)
-plot(visible$Blue, main = "blue", col = gray(0:100 / 100))
-plot(caba.win,border="yellow",add=T)
-```
-
 # 2)
 
 ```{r}
@@ -504,3 +363,272 @@ leaflet(barrios_mapa) %>%
     opacity = 0.8
   )
 ```
+
+
+# Mapas coropléticos barriales
+
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(stringi)
+
+# Normalizo los nombres para poder unir los datos publicados con los barrios
+# oficiales, aun cuando difieran en mayúsculas, tildes o espacios.
+normalizar_barrio <- function(x) {
+  x %>%
+    as.character() %>%
+    trimws() %>%
+    toupper() %>%
+    stri_trans_general("Latin-ASCII")
+}
+
+barrios_mapa <- st_read(
+  "barrios-20260902/barrios_badata_wgs84.shp",
+  quiet = TRUE
+) %>%
+  st_transform(4326) %>%
+  mutate(barrio_id = normalizar_barrio(BARRIO))
+
+datos_mapa <- datos1b %>%
+  mutate(barrio_id = normalizar_barrio(barrio))
+
+estadisticas_barriales <- datos_mapa %>%
+  group_by(barrio_id) %>%
+  summarise(
+    mediana_precio_m2 = median(pm2, na.rm = TRUE),
+    departamentos_publicados = n(),
+    mediana_superficie = median(sup, na.rm = TRUE),
+    mediana_ambientes = median(ambientes, na.rm = TRUE),
+    iqr_precio_m2 = IQR(pm2, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+barrios_estadisticas <- barrios_mapa %>%
+  left_join(estadisticas_barriales, by = "barrio_id")
+```
+
+```{r}
+mapa_coropletico <- function(datos, variable, titulo, subtitulo, leyenda) {
+  ggplot(datos) +
+    geom_sf(aes(fill = .data[[variable]]), color = "white", linewidth = 0.25) +
+    scale_fill_viridis_c(
+      option = "C",
+      na.value = "grey90",
+      name = leyenda,
+      guide = guide_colorbar(
+        title.position = "top",
+        barwidth = grid::unit(8, "cm"),
+        barheight = grid::unit(0.4, "cm")
+      )
+    ) +
+    labs(
+      title = titulo,
+      subtitle = subtitulo,
+      caption = "Fuente: ar_properties.csv; elaboración propia"
+    ) +
+    theme_void() +
+    theme(
+      plot.title = element_text(face = "bold", size = 13),
+      plot.subtitle = element_text(size = 10),
+      legend.position = "bottom",
+      plot.caption = element_text(hjust = 0)
+    )
+}
+
+mapa_coropletico(
+  barrios_estadisticas,
+  "mediana_precio_m2",
+  "Mediana del precio por metro cuadrado",
+  "Departamentos en venta, por barrio",
+  "USD/m²"
+)
+
+mapa_coropletico(
+  barrios_estadisticas,
+  "departamentos_publicados",
+  "Cantidad de departamentos publicados",
+  "Departamentos en venta, por barrio",
+  "Publicaciones"
+)
+
+mapa_coropletico(
+  barrios_estadisticas,
+  "mediana_superficie",
+  "Superficie mediana",
+  "Departamentos en venta, por barrio",
+  "m²"
+)
+
+mapa_coropletico(
+  barrios_estadisticas,
+  "mediana_ambientes",
+  "Número mediano de ambientes",
+  "Departamentos en venta, por barrio",
+  "Ambientes"
+)
+
+mapa_coropletico(
+  barrios_estadisticas,
+  "iqr_precio_m2",
+  "Rango intercuartílico del precio por metro cuadrado",
+  "Departamentos en venta, por barrio",
+  "IQR (USD/m²)"
+)
+```
+
+# Relación entre precio por m² y distancia a Av. Santa Fe/Cabildo
+
+```{r}
+library(sf)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+# Selecciono los departamentos de Palermo y las trazas de la avenida
+# Santa Fe/Cabildo. El cálculo se realiza en un CRS métrico.
+deptos_palermo <- deptos.sf %>%
+  filter(normalizar_barrio(barrio) == "PALERMO") %>%
+  st_transform(22185)
+
+avenida_santa_fe_cabildo <- calles.comp %>%
+  filter(
+    str_detect(
+      str_to_upper(nom_mapa),
+      "SANTA[[:space:]]+FE|CABILDO"
+    )
+  ) %>%
+  st_transform(22185) %>%
+  st_geometry() %>%
+  st_union()
+
+if (length(avenida_santa_fe_cabildo) == 0) {
+  stop("No se encontraron tramos de Av. Santa Fe o Av. Cabildo en el callejero.")
+}
+
+indice_avenida <- st_nearest_feature(deptos_palermo, avenida_santa_fe_cabildo)
+
+deptos_palermo <- deptos_palermo %>%
+  mutate(
+    distancia_avenida_m = as.numeric(
+      st_distance(
+        geometry,
+        avenida_santa_fe_cabildo[indice_avenida],
+        by_element = TRUE
+      )
+    )
+  )
+
+deptos_palermo %>%
+  st_drop_geometry() %>%
+  summarise(
+    departamentos = n(),
+    distancia_min_m = min(distancia_avenida_m, na.rm = TRUE),
+    distancia_mediana_m = median(distancia_avenida_m, na.rm = TRUE),
+    distancia_max_m = max(distancia_avenida_m, na.rm = TRUE),
+    precio_m2_mediano = median(pm2, na.rm = TRUE)
+  )
+```
+
+```{r}
+# Gráfico de la relación observada. La línea muestra la tendencia lineal
+# estimada y la escala logarítmica facilita leer la concentración de precios.
+ggplot(
+  deptos_palermo %>% st_drop_geometry(),
+  aes(x = distancia_avenida_m, y = pm2)
+) +
+  geom_point(alpha = 0.35, color = "#2C7FB8") +
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "#D95F0E") +
+  scale_y_log10() +
+  labs(
+    title = "Precio por m² según distancia a Av. Santa Fe/Cabildo",
+    subtitle = "Departamentos publicados en Palermo",
+    x = "Distancia a la avenida más cercana (m)",
+    y = "Precio por m² (USD, escala logarítmica)",
+    caption = "Fuente: ar_properties.csv; elaboración propia"
+  ) +
+  theme_minimal()
+
+# La correlación de Spearman evalúa una asociación monotónica sin asumir
+# normalidad ni una relación estrictamente lineal.
+correlacion_spearman <- cor.test(
+  ~ distancia_avenida_m + pm2,
+  data = deptos_palermo %>% st_drop_geometry(),
+  method = "spearman",
+  exact = FALSE
+)
+correlacion_spearman
+
+# Modelo lineal complementario sobre el logaritmo del precio para estimar el
+# cambio porcentual promedio por cada kilómetro adicional.
+modelo_distancia <- lm(
+  log(pm2) ~ distancia_avenida_m,
+  data = deptos_palermo %>% st_drop_geometry()
+)
+summary(modelo_distancia)
+```
+
+```{r}
+rho <- unname(correlacion_spearman$estimate)
+p_valor <- correlacion_spearman$p.value
+pendiente_km <- coef(modelo_distancia)[["distancia_avenida_m"]] * 1000
+cambio_porcentual_km <- (exp(pendiente_km) - 1) * 100
+r2 <- summary(modelo_distancia)$r.squared
+
+cat(
+  sprintf(
+    "La correlación de Spearman es %.3f (p = %.4g). ",
+    rho, p_valor
+  ),
+  if (rho < 0) {
+    "La asociación es negativa: los precios tienden a disminuir al alejarse de la avenida. "
+  } else {
+    "La asociación es positiva: los precios tienden a aumentar al alejarse de la avenida. "
+  },
+  sprintf(
+    "La regresión estima un cambio promedio de %.2f%% en el precio por m² por cada km adicional; R² = %.3f.",
+    cambio_porcentual_km, r2
+  )
+)
+```
+
+```{r}
+require(spatstat)
+require(maptools)
+# cargo provincias y consigo el limite de CABA 
+provincia.comp <- st_read("Provincia-20260902/ign_provincia.shp")
+caba.ch<-st_convex_hull(provincia.comp[1,]$geometry)
+coo<-st_coordinates(caba.ch)[-35,1:2]
+# `owin()` requiere que el polígono tenga orientación antihoraria
+# (área firmada positiva).
+area_firmada <- sum(
+  coo[, 1] * dplyr::lead(coo[, 2], default = coo[1, 2]) -
+    dplyr::lead(coo[, 1], default = coo[1, 1]) * coo[, 2]
+) / 2
+
+if (area_firmada < 0) {
+  coo <- coo[nrow(coo):1, , drop = FALSE]
+}
+
+caba.win<-owin(poly=list(x=coo[,1],y=coo[,2]))
+plot(caba.ch)
+plot(caba.win)
+```
+
+```{r}
+require(raster)
+require(terra)
+visible<-rast("Sentinel-20260902/2021-10-20-0000_2021-10-20-2359_Sentinel-2_L2A_True_Color.tiff")
+visible # objeto
+class(visible)
+names(visible)<-c("Red","Green","Blue")
+visible.ras<-raster(visible)
+summary(values(visible.ras))
+plot(visible$Red, main = "Red", col = gray(0:100 / 100))
+plot(caba.win,border="yellow",add=T)
+plot(visible$Green, main = "green", col = gray(0:100 / 100))
+plot(caba.win,border="yellow",add=T)
+plot(visible$Blue, main = "blue", col = gray(0:100 / 100))
+plot(caba.win,border="yellow",add=T)
+```
+
